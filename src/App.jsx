@@ -23,9 +23,10 @@ const DEFAULT_PLAYERS = [
   { id: "p6", name: "okamipancake", avatar: "/avatars/lj.jpg", note: "" },
   { id: "p7", name: "Silveryena", avatar: "/avatars/sil.jpg", note: "" },
   { id: "p8", name: "Neon", avatar: "/avatars/neon.png", note: "" },
+  { id: "p9", name: "Abgnegplt", avatar: "/avatars/Abgnegplt.jpg", note: "" }
 ];
 
-const EMPTY_BONUS = [20, 10, -10, -20]; // example default rank bonus (1st..4th)
+const EMPTY_BONUS = [35, 10, -10, -20]; // example default rank bonus (1st..4th)
 
 // ----------------------- Helpers -----------------------
 function cls(...arr) {
@@ -75,64 +76,44 @@ function computeRoundDeltas(seatWithRaw, rankBonus) {
 // ----------------------- Main Component -----------------------
 export default function MahjongTournamentTracker() {
   // Core state
-  const [players, setPlayers] = useState(() => loadPersisted("mt_players", DEFAULT_PLAYERS));
+  const [players, setPlayers] = useState(() => loadPersisted("mt_players", []));
+  const [showSharkySelect, setShowSharkySelect] = useState(false);
+  const [sharkySelected, setSharkySelected] = useState([]);
   const [playerScores, setPlayerScores] = useState(() => loadPersisted("mt_playerScores", Object.fromEntries(DEFAULT_PLAYERS.map(p => [p.id, 0]))));
   const [rounds, setRounds] = useState(() => loadPersisted("mt_rounds", []));
   const [rankBonus, setRankBonus] = useState(() => loadPersisted("mt_rankBonus", EMPTY_BONUS));
-  const [groupsEnabled, setGroupsEnabled] = useState(() => loadPersisted("mt_groupsEnabled", false));
-  const [groups, setGroups] = useState(() => loadPersisted("mt_groups", [
-    { id: "g1", name: "Group A", members: [] },
-    { id: "g2", name: "Group B", members: [] },
-    { id: "g3", name: "Group C", members: [] },
-    { id: "g4", name: "Group D", members: [] },
-  ]));
+  const [topK, setTopK] = useState(() => loadPersisted("mt_topK", 4));
+  // ...group feature removed...
 
   // UI state
   const [showRoundDialog, setShowRoundDialog] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [showGroupSetup, setShowGroupSetup] = useState(false);
+  // ...group feature removed...
 
+  const [showAddPlayer, setShowAddPlayer] = useState(false);
+  const [newPlayerName, setNewPlayerName] = useState("");
+  const [newPlayerAvatar, setNewPlayerAvatar] = useState("");
+  const newPlayerInputRef = React.useRef(null);
   // Persist
   useEffect(() => savePersisted("mt_players", players), [players]);
   useEffect(() => savePersisted("mt_playerScores", playerScores), [playerScores]);
   useEffect(() => savePersisted("mt_rounds", rounds), [rounds]);
   useEffect(() => savePersisted("mt_rankBonus", rankBonus), [rankBonus]);
-  useEffect(() => savePersisted("mt_groupsEnabled", groupsEnabled), [groupsEnabled]);
-  useEffect(() => savePersisted("mt_groups", groups), [groups]);
+  useEffect(() => savePersisted("mt_topK", topK), [topK]);
+  // ...group feature removed...
 
   const playersById = useMemo(() => Object.fromEntries(players.map(p => [p.id, p])), [players]);
-  const anyRounds = rounds.length > 0;
 
-  // --------------- Derived: Group scores ---------------
-  const groupScores = useMemo(() => {
-    if (!groupsEnabled) return [];
-    return groups.map(g => ({
-      id: g.id,
-      name: g.name,
-      members: g.members,
-      score: g.members.reduce((acc, pid) => acc + (playerScores[pid] || 0), 0),
-    }));
-  }, [groupsEnabled, groups, playerScores]);
+  // ...group feature removed...
 
   // --------------- Handlers ---------------
   function resetAll() {
-  if (!window.confirm("确定要清空所有数据吗？此操作不可撤销。")) return;
-
-    // Clear persisted keys first to avoid stale flicker
+    if (!window.confirm("确定要清空所有数据吗？此操作不可撤销。")) return;
     try {
-      ["mt_playerScores", "mt_rounds", "mt_groupsEnabled", "mt_groups"].forEach(k => localStorage.removeItem(k));
+      ["mt_playerScores", "mt_rounds"].forEach(k => localStorage.removeItem(k));
     } catch {}
-
-    // Reset runtime state: scores, rounds, and ALSO grouping state
     setPlayerScores(Object.fromEntries(players.map(p => [p.id, 0])));
     setRounds([]);
-    setGroupsEnabled(false);
-    setGroups([
-      { id: "g1", name: "Group A", members: [] },
-      { id: "g2", name: "Group B", members: [] },
-      { id: "g3", name: "Group C", members: [] },
-      { id: "g4", name: "Group D", members: [] },
-    ]);
   }
 
   function handleUpdatePlayer(id, patch) {
@@ -162,21 +143,7 @@ export default function MahjongTournamentTracker() {
     );
   }
 
-  function GroupSetupButton() {
-    const disabled = anyRounds; // lock grouping after games start
-    return (
-      <button
-        onClick={() => setShowGroupSetup(true)}
-        disabled={disabled}
-        className={cls(
-          "px-3 py-2 rounded-2xl border text-sm",
-          disabled ? "opacity-50 cursor-not-allowed" : "hover:shadow"
-        )}
-      >
-        {groupsEnabled ? "调整分组" : "分组(可选)"}
-      </button>
-    );
-  }
+  // ...group feature removed...
 
   // ----------------- Dialogs -----------------
   function RoundDialog() {
@@ -185,12 +152,13 @@ export default function MahjongTournamentTracker() {
     const [error, setError] = useState("");
 
     function validate() {
-      // ensure 4 distinct players and valid numbers totaling near 120000 (not required though)
+      // ensure 4 distinct players and valid numbers totaling exactly 100000
       const unique = new Set(seat.filter(Boolean));
       if (unique.size !== 4) return "请选择 4 位不同的玩家 (东南西北有且仅各一人)。";
       const nums = raw.map(v => Number(v));
       if (nums.some(n => !Number.isFinite(n))) return "请输入有效的分数(整数)。";
-      // Mahjong usually sums to 100k/120k depending rules; we don't enforce exact sum
+      const sum = nums.reduce((a, b) => a + b, 0);
+      if (sum !== 100000) return `分数总和必须为 100000，目前为 ${sum}`;
       return "";
     }
 
@@ -225,6 +193,12 @@ export default function MahjongTournamentTracker() {
 
     const seatNames = ["东", "南", "西", "北"];
 
+    // refs for select elements
+    const selectRefs = [React.useRef(), React.useRef(), React.useRef(), React.useRef()];
+    useEffect(() => {
+      // On modal open, do not focus anything to avoid iPad bug
+    }, [showRoundDialog]);
+
     return (
       <Modal title="录入一局" onClose={() => setShowRoundDialog(false)}>
         <div className="space-y-4">
@@ -232,8 +206,15 @@ export default function MahjongTournamentTracker() {
             <div key={i} className="grid grid-cols-3 gap-3 items-center">
               <div className="text-sm text-gray-600">{label}：</div>
               <select
+                ref={selectRefs[i]}
                 className="col-span-1 border rounded-xl px-3 py-2"
                 value={seat[i]}
+                onFocus={e => {
+                  // iPad workaround: re-focus if lost
+                  setTimeout(() => {
+                    if (selectRefs[i].current) selectRefs[i].current.focus();
+                  }, 0);
+                }}
                 onChange={(e) => {
                   const v = e.target.value;
                   setSeat(s => {
@@ -272,13 +253,17 @@ export default function MahjongTournamentTracker() {
   }
 
   function SettingsDialog() {
-    const [tempBonus, setTempBonus] = useState(rankBonus.map(String));
+  const [tempBonus, setTempBonus] = useState(rankBonus.map(String));
+  const [tempTopK, setTempTopK] = useState(topK.toString());
 
     function onSave() {
       const vals = tempBonus.map(Number);
       if (vals.some(v => !Number.isFinite(v))) return alert("请输入有效的数字");
-      setRankBonus(vals);
-      setShowSettings(false);
+  const k = Number(tempTopK);
+  if (!Number.isFinite(k) || k < 1 || k > players.length) return alert("请输入有效的Top K (1~玩家数)");
+  setRankBonus(vals);
+  setTopK(k);
+  setShowSettings(false);
     }
 
     function revertToDefault() {
@@ -294,18 +279,12 @@ export default function MahjongTournamentTracker() {
           "mt_groups"
         ].forEach(k => localStorage.removeItem(k));
       } catch {}
-      setPlayers(DEFAULT_PLAYERS);
-      setPlayerScores(Object.fromEntries(DEFAULT_PLAYERS.map(p => [p.id, 0])));
+      setPlayers([]);
+      setPlayerScores({});
       setRounds([]);
       setRankBonus(EMPTY_BONUS);
-      setGroupsEnabled(false);
-      setGroups([
-        { id: "g1", name: "Group A", members: [] },
-        { id: "g2", name: "Group B", members: [] },
-        { id: "g3", name: "Group C", members: [] },
-        { id: "g4", name: "Group D", members: [] },
-      ]);
-      setShowSettings(false);
+  setTopK(4);
+  setShowSettings(false);
     }
 
     return (
@@ -324,10 +303,19 @@ export default function MahjongTournamentTracker() {
               />
             </div>
           ))}
-
-          <div className="text-xs text-gray-500">说明：一局中每位玩家最终得分 = (原始点数 - 30000)/1000 + 对应名次加减分。
+          <div className="grid grid-cols-2 gap-3 items-center">
+            <div className="text-sm text-gray-600">排行榜Top K：</div>
+            <input
+              className="border rounded-xl px-3 py-2"
+              value={tempTopK}
+              onChange={e => {
+                const v = e.target.value.replace(/[^\d]/g, "");
+                setTempTopK(v);
+              }}
+              placeholder="Top K"
+            />
           </div>
-
+          <div className="text-xs text-gray-500">说明：一局中每位玩家最终得分 = (原始点数 - 30000)/1000 + 对应名次加减分。排行榜Top K用于分割线显示。</div>
           <div className="flex flex-col gap-2 pt-2">
             <button className="px-4 py-2 rounded-xl border" onClick={onSave}>保存</button>
             <button className="px-4 py-2 rounded-xl border" onClick={resetAll}>清空数据</button>
@@ -339,80 +327,7 @@ export default function MahjongTournamentTracker() {
     );
   }
 
-  function GroupSetupDialog() {
-    const [enabled, setEnabled] = useState(groupsEnabled);
-    const [draftGroups, setDraftGroups] = useState(groups);
-
-    function toggleMember(gid, pid) {
-      setDraftGroups(prev => prev.map(g => {
-        if (g.id !== gid) return g;
-        const exists = g.members.includes(pid);
-        return { ...g, members: exists ? g.members.filter(x => x !== pid) : g.members.length < 2 ? [...g.members, pid] : g.members };
-      }));
-    }
-
-    // Ensure uniqueness across groups
-    function isPicked(pid, targetGid) {
-      return draftGroups.some(g => g.id !== targetGid && g.members.includes(pid));
-    }
-
-    function onSave() {
-      // Validate: each group up to 2 members; if enabled, require all 8 assigned across four groups?
-      if (enabled) {
-        const total = draftGroups.reduce((a, g) => a + g.members.length, 0);
-        if (total !== 8) {
-          return alert("启用分组时需要把 8 位选手分成 4 组，每组 2 人。");
-        }
-      }
-      setGroupsEnabled(enabled);
-      setGroups(draftGroups.map(g => ({ ...g, members: [...g.members] })));
-      setShowGroupSetup(false);
-    }
-
-    return (
-      <Modal title="分组设置（可选，开始后即锁定）" onClose={() => setShowGroupSetup(false)}>
-        <div className="space-y-4 max-w-5xl mx-auto">
-          <label className="flex items-center gap-2">
-            <input type="checkbox" className="h-4 w-4" checked={enabled} onChange={e => setEnabled(e.target.checked)} />
-            <span>启用 2 人一组（共 4 组）</span>
-          </label>
-
-          {/* Only show group selection if enabled is true */}
-          {enabled && (
-            <div className={cls("grid", enabled ? "grid-cols-2 md:grid-cols-4" : "grid-cols-1", "gap-4")}> 
-              {draftGroups.map(g => (
-                <div key={g.id} className="border rounded-2xl p-3">
-                  <div className="font-medium mb-2">{g.name}</div>
-                  <div className="flex flex-col gap-2">
-                    {players.map(p => (
-                      <label key={p.id} className={cls(
-                        "flex items-center gap-2 text-sm",
-                        isPicked(p.id, g.id) && !g.members.includes(p.id) ? "opacity-30" : ""
-                      )}>
-                        <input
-                          type="checkbox"
-                          disabled={isPicked(p.id, g.id)}
-                          checked={g.members.includes(p.id)}
-                          onChange={() => toggleMember(g.id, p.id)}
-                        />
-                        <AvatarSmall player={p} />
-                      </label>
-                    ))}
-                  </div>
-                  <div className="text-xs text-gray-500 mt-2">{g.members.length}/2 已选择</div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          <div className="flex justify-end gap-3 pt-2">
-            <button className="px-3 py-2 rounded-xl border" onClick={()=>setShowGroupSetup(false)}>取消</button>
-            <button className="px-4 py-2 rounded-xl bg-black text-white" onClick={onSave}>保存</button>
-          </div>
-        </div>
-      </Modal>
-    );
-  }
+  // ...group feature removed...
 
   // ----------------- UI Subcomponents -----------------
   function Modal({ title, children, onClose }) {
@@ -467,6 +382,8 @@ export default function MahjongTournamentTracker() {
 
   // Leaderboard rows with divider after top 4
   function Leaderboard({ items, title, isGroup }) {
+    // Use topK for player leaderboard
+    const k = isGroup ? 2 : topK;
     return (
       <div className="border rounded-3xl p-4 shadow-sm">
         <div className="flex items-center justify-between mb-3">
@@ -474,12 +391,11 @@ export default function MahjongTournamentTracker() {
           <div className="text-xs text-gray-500">单位：分</div>
         </div>
         <div>
-          {/* Only first two groups can win in group leaderboard */}
           {isGroup
             ? items.slice(0,2).map((it, idx) => (
                 <GroupRow key={it.key} index={idx+1} it={it} highlight />
               ))
-            : items.slice(0,4).map((it, idx) => (
+            : items.slice(0,k).map((it, idx) => (
                 <Row key={it.key} index={idx+1} it={it} highlight />
               ))}
           <div className="my-2 h-px bg-gradient-to-r from-transparent via-gray-300 to-transparent" />
@@ -487,8 +403,8 @@ export default function MahjongTournamentTracker() {
             ? items.slice(2).map((it, i) => (
                 <GroupRow key={it.key} index={i+3} it={it} />
               ))
-            : items.slice(4).map((it, i) => (
-                <Row key={it.key} index={i+5} it={it} />
+            : items.slice(k).map((it, i) => (
+                <Row key={it.key} index={i+k+1} it={it} />
               ))}
         </div>
       </div>
@@ -514,34 +430,7 @@ export default function MahjongTournamentTracker() {
     );
   }
 
-  function GroupRow({ index, it, highlight }) {
-    return (
-      <div className={cls("flex items-center justify-between py-2 px-2 rounded-2xl", highlight ? "bg-gray-50" : "") }>
-        <div className="flex items-center gap-3">
-          <div className="w-6 text-right tabular-nums text-gray-500">{index}</div>
-          {/* Show avatars of group members together */}
-          <div className="flex items-center gap-1">
-            {it.members.map((m, i) => (
-              m && m.avatar ? (
-                <img key={m.id || i} src={m.avatar} alt={m.name} className="w-8 h-8 rounded-full object-cover" />
-              ) : (
-                <div key={m.id || i} className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center">
-                  <span className="text-[11px] font-semibold text-gray-600">{initials(m.name || m)}</span>
-                </div>
-              )
-            ))}
-          </div>
-          {/* Show names of group members together */}
-          <div className="flex items-center gap-2 ml-2">
-            {it.members.map((m, i) => (
-              <span key={m.id || i} className="font-medium">{m.name || m}</span>
-            ))}
-          </div>
-        </div>
-        <div className="font-semibold tabular-nums">{it.score.toFixed(1)}</div>
-      </div>
-    );
-  }
+  // ...group feature removed...
 
   // --------------- Derived leaderboards ---------------
   const playerBoard = useMemo(() => {
@@ -550,75 +439,110 @@ export default function MahjongTournamentTracker() {
       .sort((a, b) => b.score - a.score);
   }, [players, playerScores]);
 
-  const groupBoard = useMemo(() => {
-    if (!groupsEnabled) return [];
-    return groupScores
-      .map(g => ({
-        key: g.id,
-        members: g.members.map(pid => playersById[pid]),
-        score: g.score
-      }))
-      .sort((a, b) => b.score - a.score);
-  }, [groupsEnabled, groupScores, playersById]);
+  // Add Player Modal UI state
 
-  // ----------------- Developer Self Tests -----------------
-  // function runSelfTests() {
-  //   const results = [];
+  function handleAddPlayer() {
+    setShowAddPlayer(true);
+    setNewPlayerName("");
+    setNewPlayerAvatar("");
+    setTimeout(() => {
+      if (newPlayerInputRef.current) newPlayerInputRef.current.focus();
+    }, 0);
+  }
 
-  //   function assertAlmostEqual(name, a, b, eps = 1e-6) {
-  //     const ok = Math.abs(a - b) <= eps;
-  //     results.push(`${ok ? "✅" : "❌"} ${name}: ${a} ${ok ? "≈" : "≠"} ${b}`);
-  //     return ok;
-  //   }
+  // SHA-256 hash of the password (replace with your own hash)
+  const SHARKY_HASH = "67a205d59cd42fee958c8f6e3c383c82f299e5acff92ab6583794dfb50a9706d";
 
-  //   // Test 1: basic ranking and deltas
-  //   const tb1 = [20, 10, -10, -20];
-  //   const seat1 = [
-  //     { pid: "A", raw: 45000 }, // rank 1
-  //     { pid: "B", raw: 33000 }, // rank 2
-  //     { pid: "C", raw: 25000 }, // rank 3
-  //     { pid: "D", raw: 20000 }, // rank 4
-  //   ];
-  //   const out1 = computeRoundDeltas(seat1, tb1);
-  //   assertAlmostEqual("T1.A base", out1[0].base, 15);
-  //   assertAlmostEqual("T1.A delta", out1[0].delta, 35);
-  //   assertAlmostEqual("T1.B delta", out1[1].delta, (33-30)/1 + 10); // 3 + 10 = 13
-  //   assertAlmostEqual("T1.C delta", out1[2].delta, (25-30)/1 - 10); // -5 -10 = -15
-  //   assertAlmostEqual("T1.D delta", out1[3].delta, (20-30)/1 - 20); // -10 -20 = -30
+  async function checkPassword(input) {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(input.trim());
+    const hashBuffer = await window.crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    return hashHex === SHARKY_HASH;
+  }
 
-  //   // Test 2: ties keep original order (stable sort)
-  //   const seat2 = [
-  //     { pid: "E", raw: 30000 },
-  //     { pid: "F", raw: 30000 },
-  //     { pid: "G", raw: 28000 },
-  //     { pid: "H", raw: 12000 },
-  //   ];
-  //   const out2 = computeRoundDeltas(seat2, tb1);
-  //   // E should outrank F due to stable sort; base 0
-  //   assertAlmostEqual("T2.E delta", out2[0].delta, 0 + 20);
-  //   assertAlmostEqual("T2.F delta", out2[1].delta, 0 + 10);
-
-  //   // Test 3: negative base values handled
-  //   const seat3 = [
-  //     { pid: "I", raw: 15000 },
-  //     { pid: "J", raw: 14000 },
-  //     { pid: "K", raw: 13000 },
-  //     { pid: "L", raw: 12000 },
-  //   ];
-  //   const out3 = computeRoundDeltas(seat3, tb1);
-  //   assertAlmostEqual("T3.I base", out3[0].base, -15);
-
-  //   setTestOutput(results.join("\n"));
-  //   return results.every(line => line.startsWith("✅"));
-  // }
+  async function handleConfirmAddPlayer() {
+    if (!newPlayerName.trim()) return;
+    if (await checkPassword(newPlayerName.trim())) {
+      setShowAddPlayer(false);
+      setShowSharkySelect(true);
+      setSharkySelected([]);
+      return;
+    }
+    const id = `p${Date.now()}`;
+    setPlayers(prev => {
+      const next = [...prev, { id, name: newPlayerName.trim(), avatar: newPlayerAvatar, note: "" }];
+      setTopK(Math.ceil(next.length / 2));
+      return next;
+    });
+    setPlayerScores(prev => ({ ...prev, [id]: 0 }));
+    setShowAddPlayer(false);
+  }
 
   // --------------- Page -----------------
   return (
     <div className="p-4 md:p-6 lg:p-8 max-w-6xl mx-auto">
+      {/* Sharky special page: select default players to add */}
+      {showSharkySelect && (
+        <Modal title="选择默认玩家加入比赛" onClose={() => { setShowSharkySelect(false); setSharkySelected([]); }}>
+          <div className="flex flex-col gap-4 items-center">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {DEFAULT_PLAYERS.map(p => {
+                const selected = sharkySelected.includes(p.id);
+                return (
+                  <button
+                    key={p.id}
+                    className={cls(
+                      "border rounded-2xl p-4 flex flex-col items-center hover:bg-gray-50 transition",
+                      selected ? "bg-blue-100 border-blue-500" : ""
+                    )}
+                    onClick={() => {
+                      setSharkySelected(sel =>
+                        sel.includes(p.id)
+                          ? sel.filter(id => id !== p.id)
+                          : [...sel, p.id]
+                      );
+                    }}
+                  >
+                    {p.avatar ? (
+                      <img src={p.avatar} alt={p.name} className="w-16 h-16 rounded-full object-cover mb-2" />
+                    ) : (
+                      <div className="w-16 h-16 rounded-full bg-gray-200 flex items-center justify-center mb-2">
+                        <span className="text-lg font-semibold text-gray-600">{initials(p.name)}</span>
+                      </div>
+                    )}
+                    <span className="font-medium">{p.name}</span>
+                    {selected && <span className="mt-2 text-xs text-blue-600">已选择</span>}
+                  </button>
+                );
+              })}
+            </div>
+            <button
+              className={cls("mt-4 px-4 py-2 rounded-xl border", sharkySelected.length === 0 ? "opacity-50 cursor-not-allowed" : "")}
+              disabled={sharkySelected.length === 0}
+              onClick={() => {
+                const selectedPlayers = DEFAULT_PLAYERS.filter(p => sharkySelected.includes(p.id));
+                setPlayers(prev => {
+                  const next = [...prev, ...selectedPlayers];
+                  setTopK(Math.ceil(next.length / 2));
+                  return next;
+                });
+                setPlayerScores(prev => {
+                  const next = { ...prev };
+                  for (const p of selectedPlayers) next[p.id] = 0;
+                  return next;
+                });
+                setShowSharkySelect(false);
+                setSharkySelected([]);
+              }}
+            >完成</button>
+          </div>
+        </Modal>
+      )}
       <header className="flex flex-wrap items-center justify-between gap-3 mb-5">
         <h1 className="text-2xl font-bold">麻将赛况追踪</h1>
         <div className="flex items-center gap-2">
-          <GroupSetupButton />
           <SettingsButton />
           <AddRoundButton />
         </div>
@@ -668,12 +592,66 @@ export default function MahjongTournamentTracker() {
             </div>
           </div>
         ))}
+        <div className="border-dashed border-2 rounded-3xl p-4 flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50" onClick={handleAddPlayer}>
+          <span className="text-2xl">＋</span>
+          <span className="text-sm mt-2">添加玩家</span>
+        </div>
       </section>
 
+      {/* Add Player Modal */}
+      {showAddPlayer && (
+        <Modal title="添加新玩家" onClose={() => setShowAddPlayer(false)}>
+          <div className="flex flex-col items-center gap-4">
+            <div className="flex flex-col items-center">
+              <div
+                className="w-20 h-20 rounded-full bg-gray-200 flex items-center justify-center cursor-pointer mb-2 relative"
+                onClick={() => {
+                  const input = document.createElement('input');
+                  input.type = 'file';
+                  input.accept = 'image/*';
+                  input.onchange = (e) => {
+                    const file = e.target.files[0];
+                    if (file) {
+                      const reader = new FileReader();
+                      reader.onload = (ev) => {
+                        setNewPlayerAvatar(ev.target.result);
+                      };
+                      reader.readAsDataURL(file);
+                    }
+                  };
+                  input.click();
+                }}
+              >
+                {newPlayerAvatar ? (
+                  <img src={newPlayerAvatar} alt="avatar" className="w-20 h-20 rounded-full object-cover" />
+                ) : (
+                  <span className="text-4xl text-gray-400">＋</span>
+                )}
+                {!newPlayerAvatar && (
+                  <span className="absolute inset-0 flex items-center justify-center text-4xl text-gray-400">＋</span>
+                )}
+              </div>
+              <div className="text-xs text-gray-500 mb-2">点击上传头像（可选）</div>
+            </div>
+            <input
+              ref={newPlayerInputRef}
+              autoFocus
+              className="w-48 border rounded-xl px-3 py-2 text-center"
+              placeholder="玩家名字"
+              value={newPlayerName}
+              onChange={e => setNewPlayerName(e.target.value)}
+            />
+            <div className="flex gap-3 mt-2">
+              <button className="px-4 py-2 rounded-xl border" onClick={() => setShowAddPlayer(false)}>取消</button>
+              <button className="px-4 py-2 rounded-xl bg-black text-white" onClick={handleConfirmAddPlayer}>添加</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
       {/* Boards */}
-      <section className={cls("grid gap-4", groupsEnabled ? "md:grid-cols-2" : "md:grid-cols-1") }>
-        <Leaderboard title="个人积分榜 (Top 4 分割线)" items={playerBoard} />
-        {groupsEnabled && <Leaderboard title="小组积分榜" items={groupBoard} isGroup />}
+      <section className="grid gap-4 md:grid-cols-1">
+        <Leaderboard title="个人积分榜" items={playerBoard} />
       </section>
 
       {/* Rounds history */}
@@ -713,9 +691,8 @@ export default function MahjongTournamentTracker() {
         )}
       </section>
 
-      {showRoundDialog && <RoundDialog />}
-      {showSettings && <SettingsDialog />}
-      {showGroupSetup && <GroupSetupDialog />}
+  {showRoundDialog && <RoundDialog />}
+  {showSettings && <SettingsDialog />}
     </div>
   );
 }
