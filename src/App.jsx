@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import Select from "react-select";
 
 // Mahjong Tournament Tracker — 8 players
 // Single-file React component. Uses TailwindCSS for styling.
@@ -192,12 +193,20 @@ export default function MahjongTournamentTracker() {
     }
 
     const seatNames = ["东", "南", "西", "北"];
+    const playerOptions = players.map(p => ({ value: p.id, label: p.name }));
 
-    // refs for select elements
-    const selectRefs = [React.useRef(), React.useRef(), React.useRef(), React.useRef()];
-    useEffect(() => {
-      // On modal open, do not focus anything to avoid iPad bug
-    }, [showRoundDialog]);
+    const selectStyles = {
+      menuPortal: base => ({
+        ...base,
+        zIndex: 9999,
+        maxHeight: 300,
+      }),
+      menu: base => ({
+        ...base,
+        zIndex: 9999,
+        maxHeight: 300,
+      }),
+    };
 
     return (
       <Modal title="录入一局" onClose={() => setShowRoundDialog(false)}>
@@ -205,30 +214,24 @@ export default function MahjongTournamentTracker() {
           {seatNames.map((label, i) => (
             <div key={i} className="grid grid-cols-3 gap-3 items-center">
               <div className="text-sm text-gray-600">{label}：</div>
-              <select
-                ref={selectRefs[i]}
-                className="col-span-1 border rounded-xl px-3 py-2"
-                value={seat[i]}
-                onFocus={e => {
-                  // iPad workaround: re-focus if lost
-                  setTimeout(() => {
-                    if (selectRefs[i].current) selectRefs[i].current.focus();
-                  }, 0);
-                }}
-                onChange={(e) => {
-                  const v = e.target.value;
+              <Select
+                className="col-span-1"
+                options={playerOptions}
+                value={playerOptions.find(opt => opt.value === seat[i]) || null}
+                onChange={opt => {
                   setSeat(s => {
                     const copy = [...s];
-                    copy[i] = v;
+                    copy[i] = opt ? opt.value : "";
                     return copy;
                   });
                 }}
-              >
-                <option value="">选择玩家</option>
-                {players.map(p => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
-              </select>
+                isClearable
+                placeholder="选择玩家"
+                menuPlacement="auto"
+                menuPortalTarget={document.body}
+                menuPosition="fixed"
+                styles={selectStyles}
+              />
               <input
                 className="col-span-1 border rounded-xl px-3 py-2"
                 placeholder="该位原始点数"
@@ -551,7 +554,22 @@ export default function MahjongTournamentTracker() {
       {/* Players editor */}
       <section className="grid md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         {players.map(p => (
-          <div key={p.id} className="border rounded-3xl p-4">
+          <div key={p.id} className="border rounded-3xl p-4 relative">
+            {/* Remove player button */}
+            <button
+              className="absolute top-2 right-2 w-7 h-7 rounded-full bg-red-100 text-red-700 flex items-center justify-center hover:bg-red-200"
+              title="移除玩家"
+              onClick={() => {
+                if (window.confirm(`确定要移除玩家 ${p.name} 吗？`)) {
+                  setPlayers(prev => prev.filter(pl => pl.id !== p.id));
+                  setPlayerScores(prev => {
+                    const next = { ...prev };
+                    delete next[p.id];
+                    return next;
+                  });
+                }
+              }}
+            >✕</button>
             <div className="flex items-center justify-center mb-2">
               {/* AvatarLarge, clickable for upload, centered */}
               <div
