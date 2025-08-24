@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState } from "react";
-import Select from "react-select";
 
 // Mahjong Tournament Tracker — 8 players
 // Single-file React component. Uses TailwindCSS for styling.
@@ -193,20 +192,12 @@ export default function MahjongTournamentTracker() {
     }
 
     const seatNames = ["东", "南", "西", "北"];
-    const playerOptions = players.map(p => ({ value: p.id, label: p.name }));
 
-    const selectStyles = {
-      menuPortal: base => ({
-        ...base,
-        zIndex: 9999,
-        maxHeight: 300,
-      }),
-      menu: base => ({
-        ...base,
-        zIndex: 9999,
-        maxHeight: 300,
-      }),
-    };
+    // refs for select elements
+    const selectRefs = [React.useRef(), React.useRef(), React.useRef(), React.useRef()];
+    useEffect(() => {
+      // On modal open, do not focus anything to avoid iPad bug
+    }, [showRoundDialog]);
 
     return (
       <Modal title="录入一局" onClose={() => setShowRoundDialog(false)}>
@@ -214,24 +205,30 @@ export default function MahjongTournamentTracker() {
           {seatNames.map((label, i) => (
             <div key={i} className="grid grid-cols-3 gap-3 items-center">
               <div className="text-sm text-gray-600">{label}：</div>
-              <Select
-                className="col-span-1"
-                options={playerOptions}
-                value={playerOptions.find(opt => opt.value === seat[i]) || null}
-                onChange={opt => {
+              <select
+                ref={selectRefs[i]}
+                className="col-span-1 border rounded-xl px-3 py-2"
+                value={seat[i]}
+                onFocus={e => {
+                  // iPad workaround: re-focus if lost
+                  setTimeout(() => {
+                    if (selectRefs[i].current) selectRefs[i].current.focus();
+                  }, 0);
+                }}
+                onChange={(e) => {
+                  const v = e.target.value;
                   setSeat(s => {
                     const copy = [...s];
-                    copy[i] = opt ? opt.value : "";
+                    copy[i] = v;
                     return copy;
                   });
                 }}
-                isClearable
-                placeholder="选择玩家"
-                menuPlacement="auto"
-                menuPortalTarget={document.body}
-                menuPosition="fixed"
-                styles={selectStyles}
-              />
+              >
+                <option value="">选择玩家</option>
+                {players.map(p => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
               <input
                 className="col-span-1 border rounded-xl px-3 py-2"
                 placeholder="该位原始点数"
